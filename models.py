@@ -137,7 +137,7 @@ class Generator(nn.Module):
 class Encoder_svhn(nn.Module):
     def __init__(self, n_channel, latent_dim, quantize_latents, stochastic,
                  ls, input_size, L, q_limits):
-        super(Encoder, self).__init__()
+        super(Encoder_svhn, self).__init__()
 
         self.n_channel = n_channel
         self.latent_dim = latent_dim
@@ -173,26 +173,6 @@ class Encoder_svhn(nn.Module):
             nn.Tanh(),
         )
 
-    def encode(self, x):
-        """
-        Forward pass without quantizing or adding noise
-        """
-        x = self.main(x)
-        x = x.view(-1, self.conv_flat_dim)
-        x = self.final(x)
-
-        return x
-    def quantize(self, x):
-        assert self.quantize_latents, f'Quantization disabled'
-        x = self.q(x)
-
-        return x
-
-    def add_stochasticity(self, x, u):
-        assert self.stochastic, f'Stochasticity disabled'
-
-        return x + u
-
     def forward(self, x, u):
         x = self.main(x)
         x = x.view(-1, self.conv_flat_dim)
@@ -207,7 +187,7 @@ class Encoder_svhn(nn.Module):
         return x
 class Decoder_svhn(nn.Module):
     def __init__(self, latent_dim, output_size, stochastic):
-        super(Decoder, self).__init__()
+        super(Decoder_svhn, self).__init__()
         self.latent_dim = latent_dim
         self.output_size = output_size
         self.stochastic = stochastic
