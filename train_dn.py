@@ -106,9 +106,6 @@ device = torch.device("cuda:0" if args.cuda else "cpu")
 writer = SummaryWriter(os.path.join(args.model_save_dir, 'tensorboard'))
 
 # create model
-# encoder = Encoder(n_channel=3, latent_dim=args.latent_dim, quantize_latents= True, stochastic= args.stochastic,
-#                  ls = 1, input_size = args.image_size, L = args.L, q_limits=[-1,1]).to(device)
-# decoder = Decoder(latent_dim=args.latent_dim, output_size=args.image_size, stochastic= args.stochastic).to(device)
 generator = Generator(latent_dim, args.L, args.ql, args.stochastic, args.common).to(device)
 discriminator = Discriminator().to(device)
 alpha1 = generator.encoder.alpha
