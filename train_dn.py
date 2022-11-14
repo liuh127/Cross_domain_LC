@@ -23,7 +23,7 @@ import torchvision.utils as vutils
 from PIL import Image
 from tqdm import tqdm
 
-from models import Generator_schn, Discriminator
+from models import Generator_svhn, Discriminator
 from tensorboardX import SummaryWriter
 from data_loader import get_loader
 import torch.nn.functional as F
@@ -106,7 +106,7 @@ device = torch.device("cuda:0" if args.cuda else "cpu")
 writer = SummaryWriter(os.path.join(args.model_save_dir, 'tensorboard'))
 
 # create model
-generator = Generator(latent_dim, args.L, args.ql, args.stochastic, args.common).to(device)
+generator = Generator_svhn(latent_dim, args.L, args.ql, args.stochastic, args.common).to(device)
 discriminator = Discriminator().to(device)
 alpha1 = generator.encoder.alpha
 
