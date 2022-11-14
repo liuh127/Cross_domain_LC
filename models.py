@@ -101,10 +101,10 @@ def conv(c_in, c_out, k_size, stride=2, pad=1, bn=True):
         layers.append(nn.BatchNorm2d(c_out))
     return nn.Sequential(*layers)
 
-class Generator(nn.Module):
+class Generator_svhn(nn.Module):
     """Generator for transfering from mnist to svhn"""
     def __init__(self, latent_dim, L, ql, stochastic, common):
-        super(Generator, self).__init__()
+        super(Generator_svhn, self).__init__()
         # encoding blocks
         self.n_channel = 3
         self.latent_dim = latent_dim
