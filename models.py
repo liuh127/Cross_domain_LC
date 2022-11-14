@@ -227,17 +227,133 @@ class Decoder_svhn(nn.Module):
         return x
 
 
-class ResidualBlock(nn.Module):
-    def __init__(self, in_channels):
-        super(ResidualBlock, self).__init__()
-
-        self.res = nn.Sequential(nn.ReflectionPad2d(1),
-                                 nn.Conv2d(in_channels, in_channels, 3),
-                                 nn.InstanceNorm2d(in_channels),
-                                 nn.ReLU(inplace=True),
-                                 nn.ReflectionPad2d(1),
-                                 nn.Conv2d(in_channels, in_channels, 3),
-                                 nn.InstanceNorm2d(in_channels))
-
+class Generator_mnist(nn.Module):
+    """Generator for superresolution on MNIST"""
+    def __init__(self, latent_dim, L, ql, stochastic, common):
+        super(Generator_mnist, self).__init__()
+        # encoding blocks
+        self.n_channel = 1
+        self.latent_dim = latent_dim
+        self.ql = ql
+        self.stoch = stochastic
+        self.ls = 1
+        self.in_size = 32
+        self.L = L
+        self.q = [-1,1]
+        self.common = common
+        self.output_size = 784
+        self.encoder = Encoder_mnist(n_channel=self.n_channel, latent_dim=self.latent_dim, \
+            quantize_latents = self.ql, stochastic=self.stoch,\
+                 ls=self.ls, input_size=self.in_size, L=self.L, q_limits=self.q)
+        
+        # decoding blocks
+        self.decoder = Decoder_mnist(latent_dim=self.latent_dim, output_size=self.output_size, stochastic = self.stoch)
+        
     def forward(self, x):
-        return x + self.res(x)
+        if not self.common:
+            u1 = uniform_noise([x.size(0), self.latent_dim], self.encoder.alpha).cuda()
+            u2 = uniform_noise([x.size(0), self.latent_dim], self.encoder.alpha).cuda()
+        else:
+            u1 = uniform_noise([x.size(0), self.latent_dim], self.encoder.alpha).cuda()
+            u2 = u1
+        out = self.encoder(x,u1)
+        out = self.decoder(out,u2)
+        return out
+
+class Encoder_mnist(nn.Module):
+    def __init__(self, n_channel, latent_dim, quantize_latents, stochastic,
+                 ls, input_size, L, q_limits):
+        super(Encoder_mnist, self).__init__()
+
+        self.n_channel = n_channel
+        self.latent_dim = latent_dim
+        self.quantize_latents = quantize_latents
+        self.stochastic = stochastic
+        self.ls = ls # layer scale: integer factor
+        self.input_size = input_size # specified by dataset
+
+        if self.quantize_latents:
+            # Quantize to L uniformly spaced points between limits
+            centers = generate_centers(L, q_limits)
+            self.q = Quantizer(centers=centers, sigma=2/L)
+        if self.stochastic:
+            # Make alpha be less than half the quantization interval
+            # Else if not quantizing, make alpha default value of 0.25
+            if self.quantize_latents:
+                self.alpha = (q_limits[1] - q_limits[0])/(L-1)
+            else:
+                raise ValueError('Quant. disabled')
+
+        ilw = int(self.ls*32) # initial layer width
+        self.main = nn.Sequential(
+            nn.Conv2d(self.n_channel, ilw, kernel_size=5, stride=2, padding=2),
+            nn.LeakyReLU(),
+            nn.Conv2d(ilw, 2*ilw, kernel_size=5, stride=2, padding=2),
+            nn.LeakyReLU(),
+
+        )
+        # initial layer width * (4x4 shape) * (4x the filter count)
+        self.conv_flat_dim = ilw*2*7*7
+        self.final = nn.Sequential(
+            nn.Linear(self.conv_flat_dim, 128),
+            nn.LeakyReLU(),
+            nn.Linear(128, 128),
+            nn.LeakyReLU(),
+            nn.Linear(128, self.latent_dim),
+            nn.Tanh(),
+        )
+
+    def forward(self, x, u):
+        x = self.main(x)
+        x = x.view(-1, self.conv_flat_dim)
+        x = self.final(x)
+        # print(x, u)
+
+        # in universal quantization, add noise then quantize
+        if self.stochastic:
+            x = x + u
+
+        if self.quantize_latents:
+            x = self.q(x)
+
+        return x
+    
+class Decoder_mnist(nn.Module):
+    def __init__(self, latent_dim, output_size, stochastic):
+        super(Decoder_mnist, self).__init__()
+        self.latent_dim = latent_dim
+        self.output_size = output_size
+        self.stochastic = stochastic
+
+        self.expand = nn.Sequential(
+            nn.Linear(self.latent_dim, 128),
+            nn.BatchNorm1d(128),
+            nn.LeakyReLU(),
+            nn.Linear(128, 512),
+            nn.BatchNorm1d(512),
+            nn.LeakyReLU(),
+        )
+        if self.output_size == 784:
+            self.l1 = nn.ConvTranspose2d(32, 64, kernel_size=5, stride=2, padding=0)
+            self.l2 = nn.BatchNorm2d(64)
+            self.l3 = nn.LeakyReLU()
+            self.l4 = nn.ConvTranspose2d(64, 128, kernel_size=5, stride=2, padding=0)
+            self.l5 = nn.BatchNorm2d(128)
+            self.l6 = nn.LeakyReLU()
+            self.l7 = nn.ConvTranspose2d(128, 1, kernel_size=4, stride=1, padding=0)
+            self.l8 = nn.Sigmoid()
+#                 nn.Tanh()
+            # )
+        else:
+            raise ValueError(f'No deconvolution defined for output size of {self.output_size}.')
+
+    def forward(self, x, u):
+        if self.stochastic:
+            x = x-u
+        x = self.expand(x)
+        x = x.view(-1, 32, 4, 4)
+        x = self.l3(self.l2(self.l1(x, output_size = (11, 11))))
+        x = self.l6(self.l5(self.l4(x, output_size = (25, 25))))
+        x = self.l8(self.l7(x, output_size=(28, 28)))
+
+        return x
